@@ -27,8 +27,6 @@ while cap.isOpened():
 
             # 1. Distance Helper: Tip to Palm Base (Landmark 0)
             def get_ext_ratio(tip_idx):
-                # Ratio of (Tip-to-Wrist) / (Knuckle-to-Wrist)
-                # If > 1.2, finger is likely extended.
                 knuckle_dist = dist_2d(lm[tip_idx-2], lm[0])
                 tip_dist = dist_2d(lm[tip_idx], lm[0])
                 return tip_dist / knuckle_dist if knuckle_dist != 0 else 0
@@ -38,49 +36,70 @@ while cap.isOpened():
             r_ext = get_ext_ratio(16) > 1.2
             p_ext = get_ext_ratio(20) > 1.2
 
-            # 2. Key Landmark Distances for A vs O
-            thumb_to_index_tip = dist_2d(lm[4], lm[8])
-            thumb_to_mid_tip = dist_2d(lm[4], lm[12])
-            thumb_to_index_knuckle = dist_2d(lm[4], lm[5])
+            # --- ESCALA DE LA MANO (Para normalizar distancias) ---
+            # Usamos la distancia del nudillo del índice a la muñeca como referencia de tamaño
+            hand_scale = dist_2d(lm[5], lm[0]) if dist_2d(lm[5], lm[0]) != 0 else 1.0
+
+            # 2. Key Landmark Distances (Normalizadas con la escala de la mano)
+            thumb_to_index_tip = dist_2d(lm[4], lm[8]) / hand_scale
+            thumb_to_mid_tip = dist_2d(lm[4], lm[12]) / hand_scale
+            
+            # Nuevas distancias específicas para refinar la letra A (Puntos 5 y 6)
+            thumb_to_knuckle_5 = dist_2d(lm[4], lm[5]) / hand_scale
+            thumb_to_knuckle_6 = dist_2d(lm[4], lm[6]) / hand_scale
 
             # --- LSC TROUBLESHOOTING LOGIC ---
 
             # LETTER B: All extended and touching
+            # LETTER Q: All extended but touching and the top (pendiente)
             if i_ext and m_ext and r_ext and p_ext:
                 label = "LSC: B"
+
 
             # LETTER D: Only index up
             elif i_ext and not m_ext and not r_ext and not p_ext:
                 label = "LSC: D"
 
-            # LETTER V vs U: Two fingers up
-            elif i_ext and m_ext and not r_ext:
-                label = "LSC: V" if dist_2d(lm[8], lm[12]) > 0.08 else "LSC: U"
+            # LETTER V 
+            elif i_ext and m_ext and not r_ext and not p_ext:
+                label = "LSC: V" 
+
+            # LETTER U: Index and Pinky up
+            elif i_ext and p_ext and not m_ext and not r_ext:
+                label = "LSC: U"
+            
+            #LETER W: Three fingers up (Index, Middle, Ring)
+            elif r_ext and m_ext and i_ext and not p_ext:
+                label = "LSC: W"
 
             # LETTER I: Only pinky up
             elif p_ext and not i_ext and not m_ext and not r_ext:
                 label = "LSC: I"
 
+    
+
             # --- THE "A" vs "O" vs "C" ZONE ---
-            elif not i_ext and not m_ext and not r_ext:
+            # Condición: Todos los dedos largos cerrados (incluyendo el meñique para asegurar el puño)
+            elif not i_ext and not m_ext and not r_ext and not p_ext:
                 
                 # LETTER O: Circle (Thumb tip touches Index and/or Middle tip)
-                if thumb_to_index_tip < 0.05 or thumb_to_mid_tip < 0.05:
+                if thumb_to_index_tip < 0.25 or thumb_to_mid_tip < 0.25:
                     label = "LSC: O"
                 
-                # LETTER C: Claw (Fingers curved, but a wide gap)
-                elif thumb_to_index_tip > 0.12 and thumb_to_index_tip < 0.25:
-                    label = "LSC: C"
-                
-                # LETTER A: Fist (Thumb is tucked near knuckles, NOT tips)
-                elif thumb_to_index_knuckle < 0.07:
+                # LETTER A: El pulgar está muy cerca del punto 5 O del punto 6
+                # (Ajusta el 0.35 si notas que necesitas pegar más el pulgar)
+                elif thumb_to_knuckle_5 < 0.35 or thumb_to_knuckle_6 < 0.35:
                     label = "LSC: A"
                 
+                # LETTER C: Claw (Fingers curved, but a wide gap)
+                elif thumb_to_index_tip > 0.5 and thumb_to_index_tip < 1.2:
+                    label = "LSC: C"
+                
                 else:
-                    label = "Closed Fist / A?"
+                    label = "Closed Fist"
 
             # LETTER L: Index up + Thumb out
-            if i_ext and dist_2d(lm[4], lm[5]) > 0.12 and not m_ext:
+            if i_ext and (dist_2d(lm[4], lm[5]) / hand_scale) > 0.5 and not m_ext:
                 label = "LSC: L"
 
     # Display results
