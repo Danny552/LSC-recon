@@ -3,8 +3,7 @@ import mediapipe as mp
 import math
 """
 letras con movimiento G,H,J,Ñ,S,Z
-puede mejorar: R, Q
-faltan: M, N, X
+puede mejorar: R, Q, M, N 
 """
 
 # Setup
@@ -71,15 +70,24 @@ while cap.isOpened():
             mid_to_index_knuckle_6 = dist_2d(lm[9], lm[6]) / hand_scale
             mid_to_index_kuckle_7 = dist_2d(lm[9], lm[7]) / hand_scale
 
-            
+            #index gancho para X
+            i_hook = (lm[8].y < lm[6].y) and (not i_ext)
 
-            
+            #distancia index a punto 2
+            index_to_point_2 = dist_2d(lm[8], lm[2]) / hand_scale
+        
+            #distancia middle a punto 3
+            middle_to_point_3 = dist_2d(lm[12], lm[3]) / hand_scale
+
+            #distancia ring 0 - 1
+            ring_to_point_1 = dist_2d(lm[16], lm[1]) / hand_scale
+            ring_to_point_0 = dist_2d(lm[16], lm[0]) / hand_scale
 
 
 
             # --- LSC TROUBLESHOOTING LOGIC ---
 
-            # LETTER Q: All extended but touching and the top (pendiente)
+            # LETTER Q: All extended but touching and the top 
             if (i_ext and m_ext and r_ext and p_ext and 
             (thumb_to_index_tip < 0.25 or thumb_to_mid_tip < 0.25)):
                 label = "LSC: Q"
@@ -87,6 +95,10 @@ while cap.isOpened():
             # LETTER B: All extended and touching
             elif i_ext and m_ext and r_ext and p_ext and thumb_to_point_0 < 0.8:
                 label = "LSC: B"
+            
+            # LETTER X: index hook 
+            elif i_hook and not m_ext and not r_ext and not p_ext:
+                label = "LSC: X"
 
 
             # LETTER D: Only index up
@@ -148,9 +160,15 @@ while cap.isOpened():
                 m_tip_to_mcp = dist_2d(lm[12], lm[9]) / hand_scale
                 r_tip_to_mcp = dist_2d(lm[16], lm[13]) / hand_scale
                 p_tip_to_mcp = dist_2d(lm[20], lm[17]) / hand_scale
+
+                #Posiciones X del pulgar respecto a las falanges de los dedos
+                thumb_x = lm[4].x
+                idx_mcp_x = lm[5].x
+                mid_mcp_x = lm[9].x
+                ring_mcp_x = lm[13].x
                 
                 # LETTER O: Circle (Thumb tip touches Index and/or Middle tip)
-                if thumb_to_index_tip < 0.25 or thumb_to_mid_tip < 0.25:
+                if thumb_to_index_tip < 0.25 or thumb_to_mid_tip < 0.2:
                     label = "LSC: O"
                 
                 #LETTER E: all fingers curled
@@ -158,6 +176,15 @@ while cap.isOpened():
                     and p_tip_to_mcp < 0.35 and (thumb_to_index_tip < 0.4 or thumb_to_mid_tip < 0.4 or
                     thumb_to_point_0 < 1)):
                     label = "LSC: E"
+
+                # LETTER N: index cerca de 2 y middle cerca de 3
+                if (index_to_point_2 < 0.3 and middle_to_point_3 < 0.3):
+                    if (ring_to_point_1 < 0.5 or ring_to_point_0 < 0.5):
+                        label = "LSC: M"
+                    else:
+                        label = "LSC: N"
+
+                
                 
                 # LETTER A: El pulgar está muy cerca del punto 5 O del punto 6
                 elif thumb_to_knuckle_5 < 0.35 or thumb_to_knuckle_6 < 0.35:
