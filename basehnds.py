@@ -4,7 +4,7 @@ import math
 """
 letras con movimiento G,H,J,Ñ,S,Z
 puede mejorar: R, Q
-faltan: K, M, N, P, X
+faltan: K, M, N, X
 """
 
 # Setup
@@ -49,9 +49,12 @@ while cap.isOpened():
             thumb_to_index_tip = dist_2d(lm[4], lm[8]) / hand_scale
             thumb_to_mid_tip = dist_2d(lm[4], lm[12]) / hand_scale
             
-            # Nuevas distancias específicas para refinar la letra A (Puntos 5 y 6)
+            # distancias especificas de pulgar(4) a nudillos o puntos clave
             thumb_to_knuckle_5 = dist_2d(lm[4], lm[5]) / hand_scale
             thumb_to_knuckle_6 = dist_2d(lm[4], lm[6]) / hand_scale
+            thumb_to_knuckle_9 = dist_2d(lm[4], lm[9]) / hand_scale
+            thumb_to_knuckle_14 = dist_2d(lm[4], lm[14]) / hand_scale
+            thumb_to_knuckle_15 = dist_2d(lm[4], lm[15]) / hand_scale
             thumb_to_point_0 = dist_2d(lm[4], lm[0]) / hand_scale
 
             #distancia punta de los dedos a punta pulgar 
@@ -62,6 +65,15 @@ while cap.isOpened():
 
             #distancia index y midle
             i_tip_to_mid_tip = dist_2d(lm[8], lm[12]) / hand_scale
+
+            #distancia middle y index puntos (7-6)
+            mid_to_index_knuckle_6 = dist_2d(lm[9], lm[6]) / hand_scale
+            mid_to_index_kuckle_7 = dist_2d(lm[9], lm[7]) / hand_scale
+
+            
+
+            
+
 
 
             # --- LSC TROUBLESHOOTING LOGIC ---
@@ -85,12 +97,21 @@ while cap.isOpened():
             elif (p_ext and m_ext and r_ext and (i_tip_to_thumb < 0.5)):
                 label = "LSC: T"
 
+            #LETTER P: pinky and ring down, middle touch index at 7-6
+            elif (not p_ext and not r_ext and i_ext and (mid_to_index_knuckle_6 < 0.4 or mid_to_index_kuckle_7 < 0.4) and not m_ext):
+                label = "LSC: P"
+
 
             # LETTER V vs R: Index and Middle up
             elif i_ext and m_ext and not r_ext and not p_ext:
+                #LETTER R: index and middle touch  up
                 if i_tip_to_mid_tip < 0.4:
                     label = "LSC: R"
-                else:
+                #LETTER K: thumb up close to middle and index
+                #elif()
+
+                #LETTER V: thumb touches ring knuckle (14-15)
+                elif (thumb_to_knuckle_14 < 0.3 or thumb_to_knuckle_15 < 0.3):
                     label = "LSC: V"
 
             # LETTER U: Index and Pinky up
@@ -102,7 +123,7 @@ while cap.isOpened():
                 label = "LSC: W"
 
             # LETTER Y: Thumb and Pinky out
-            elif p_ext and (dist_2d(lm[4], lm[5]) / hand_scale) > 0.5 and not i_ext and not m_ext and not r_ext:
+            elif p_ext and thumb_to_knuckle_5 > 0.5 and not i_ext and not m_ext and not r_ext:
                 label = "LSC: Y"
 
 
