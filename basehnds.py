@@ -4,7 +4,7 @@ import math
 """
 letras con movimiento G,H,J,Ñ,S,Z
 puede mejorar: R, Q
-faltan: K, M, N, X
+faltan: M, N, X
 """
 
 # Setup
@@ -53,6 +53,7 @@ while cap.isOpened():
             thumb_to_knuckle_5 = dist_2d(lm[4], lm[5]) / hand_scale
             thumb_to_knuckle_6 = dist_2d(lm[4], lm[6]) / hand_scale
             thumb_to_knuckle_9 = dist_2d(lm[4], lm[9]) / hand_scale
+            thumb_to_knuckle_10 = dist_2d(lm[4], lm[10]) / hand_scale
             thumb_to_knuckle_14 = dist_2d(lm[4], lm[14]) / hand_scale
             thumb_to_knuckle_15 = dist_2d(lm[4], lm[15]) / hand_scale
             thumb_to_point_0 = dist_2d(lm[4], lm[0]) / hand_scale
@@ -105,10 +106,11 @@ while cap.isOpened():
             # LETTER V vs R: Index and Middle up
             elif i_ext and m_ext and not r_ext and not p_ext:
                 #LETTER R: index and middle touch  up
-                if i_tip_to_mid_tip < 0.4:
+                if i_tip_to_mid_tip < 0.35:
                     label = "LSC: R"
-                #LETTER K: thumb up close to middle and index
-                #elif()
+                #LETTER K: thumb up close to middle and index (6-10)
+                elif(thumb_to_knuckle_6 < 0.4 or thumb_to_knuckle_10 < 0.4):
+                    label = "LSC: K"
 
                 #LETTER V: thumb touches ring knuckle (14-15)
                 elif (thumb_to_knuckle_14 < 0.3 or thumb_to_knuckle_15 < 0.3):
