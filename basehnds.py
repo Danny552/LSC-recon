@@ -2,8 +2,8 @@ import cv2
 import mediapipe as mp
 import math
 """
-letras con movimiento G,H,J,Ñ,S,Z
-puede mejorar: R, Q, M, N 
+Letters with motion: G, H, J, Ñ, S, Z
+Improvements possible for: R, Q, M, N
 """
 
 # Setup
@@ -40,15 +40,15 @@ while cap.isOpened():
             r_ext = get_ext_ratio(16) > 1.2
             p_ext = get_ext_ratio(20) > 1.2
 
-            # --- ESCALA DE LA MANO (Para normalizar distancias) ---
-            # Usamos la distancia del nudillo del índice a la muñeca como referencia de tamaño
+            # --- HAND SCALE (to normalize distances) ---
+            # Use the distance from the index knuckle to the wrist as a size reference
             hand_scale = dist_2d(lm[5], lm[0]) if dist_2d(lm[5], lm[0]) != 0 else 1.0
 
-            # 2. Key Landmark Distances (Normalizadas con la escala de la mano)
+            # 2. Key landmark distances (normalized by hand scale)
             thumb_to_index_tip = dist_2d(lm[4], lm[8]) / hand_scale
             thumb_to_mid_tip = dist_2d(lm[4], lm[12]) / hand_scale
             
-            # distancias especificas de pulgar(4) a nudillos o puntos clave
+            # specific distances from thumb (4) to knuckles or key points
             thumb_to_knuckle_5 = dist_2d(lm[4], lm[5]) / hand_scale
             thumb_to_knuckle_6 = dist_2d(lm[4], lm[6]) / hand_scale
             thumb_to_knuckle_9 = dist_2d(lm[4], lm[9]) / hand_scale
@@ -57,29 +57,29 @@ while cap.isOpened():
             thumb_to_knuckle_15 = dist_2d(lm[4], lm[15]) / hand_scale
             thumb_to_point_0 = dist_2d(lm[4], lm[0]) / hand_scale
 
-            #distancia punta de los dedos a punta pulgar 
+            # distance from fingertips to thumb tip
             i_tip_to_thumb = dist_2d(lm[8], lm[4]) / hand_scale
             m_tip_to_thumb = dist_2d(lm[12], lm[4]) / hand_scale
             r_tip_to_thumb = dist_2d(lm[16], lm[4]) / hand_scale
             p_tip_to_thumb = dist_2d(lm[20], lm[4]) / hand_scale
 
-            #distancia index y midle
+            # distance index to middle
             i_tip_to_mid_tip = dist_2d(lm[8], lm[12]) / hand_scale
 
-            #distancia middle y index puntos (7-6)
+            # distance middle to index points (7-6)
             mid_to_index_knuckle_6 = dist_2d(lm[9], lm[6]) / hand_scale
             mid_to_index_kuckle_7 = dist_2d(lm[9], lm[7]) / hand_scale
 
-            #index gancho para X
+            # index hook for X
             i_hook = (lm[8].y < lm[6].y) and (not i_ext)
 
-            #distancia index a punto 2
+            # distance index to point 2
             index_to_point_2 = dist_2d(lm[8], lm[2]) / hand_scale
         
-            #distancia middle a punto 3
+            # distance middle to point 3
             middle_to_point_3 = dist_2d(lm[12], lm[3]) / hand_scale
 
-            #distancia ring 0 - 1
+            # distance ring 0 - 1
             ring_to_point_1 = dist_2d(lm[16], lm[1]) / hand_scale
             ring_to_point_0 = dist_2d(lm[16], lm[0]) / hand_scale
 
@@ -152,16 +152,16 @@ while cap.isOpened():
 
 
             # --- THE "A" vs "O" vs "C" vs "E" ZONE ---
-            # Condición: Todos los dedos largos cerrados (incluyendo el meñique para asegurar el puño)
+            # Condition: All long fingers closed (include the pinky to ensure a fist)
             elif not i_ext and not m_ext and not r_ext and not p_ext:
 
-                #distancias para E 
+                # distances for E 
                 i_tip_to_mcp = dist_2d(lm[8], lm[5]) / hand_scale
                 m_tip_to_mcp = dist_2d(lm[12], lm[9]) / hand_scale
                 r_tip_to_mcp = dist_2d(lm[16], lm[13]) / hand_scale
                 p_tip_to_mcp = dist_2d(lm[20], lm[17]) / hand_scale
 
-                #Posiciones X del pulgar respecto a las falanges de los dedos
+                # Thumb X positions relative to the fingers' MCP joints
                 thumb_x = lm[4].x
                 idx_mcp_x = lm[5].x
                 mid_mcp_x = lm[9].x
@@ -177,7 +177,7 @@ while cap.isOpened():
                     thumb_to_point_0 < 1)):
                     label = "LSC: E"
 
-                # LETTER N: index cerca de 2 y middle cerca de 3
+                # LETTER N: index near point 2 and middle near point 3
                 if (index_to_point_2 < 0.3 and middle_to_point_3 < 0.3):
                     if (ring_to_point_1 < 0.5 or ring_to_point_0 < 0.5):
                         label = "LSC: M"
@@ -186,7 +186,7 @@ while cap.isOpened():
 
                 
                 
-                # LETTER A: El pulgar está muy cerca del punto 5 O del punto 6
+                # LETTER A: Thumb is very close to point 5 or point 6
                 elif thumb_to_knuckle_5 < 0.35 or thumb_to_knuckle_6 < 0.35:
                     label = "LSC: A"
                 
