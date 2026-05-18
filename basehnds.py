@@ -1,10 +1,11 @@
 import cv2
 import mediapipe as mp
 import math
+from collections import deque 
 """
 Letters with motion: G, H, J, Ñ, S, Z
-Improvements possible for: R, Q, M, N
-failed: E
+Improvements possible for: R, Q, M, N, P
+
 """
 
 # Setup
@@ -15,13 +16,15 @@ mp_draw = mp.solutions.drawing_utils
 def dist_2d(p1, p2):
     return math.hypot(p1.x - p2.x, p1.y - p2.y)
 
+#for dynamic gestures
+wrist_x_history = deque(maxlen=12)
+
 cap = cv2.VideoCapture(0)
 
 while cap.isOpened():
     success, img = cap.read()
     if not success: break
     
-    # img = cv2.flip(img, 1) # Counter-mirroring (off)
     results = hands.process(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
     label = "Searching..."
 
@@ -29,6 +32,15 @@ while cap.isOpened():
         for hand_lms in results.multi_hand_landmarks:
             mp_draw.draw_landmarks(img, hand_lms, mp_hands.HAND_CONNECTIONS)
             lm = hand_lms.landmark
+
+            # Guardar la posición X de la muñeca en el historial
+            # save wrist X position in history for dynamic gesture detection
+            wrist_x_history.append(lm[0].x)
+
+            # Calcular el desplazamiento horizontal acumulado
+            mov_x = 0
+            if len(wrist_x_history) == wrist_x_history.maxlen:
+                mov_x = abs(wrist_x_history[-1] - wrist_x_history[0])
 
             # 1. Distance Helper: Tip to Palm Base (Landmark 0)
             def get_ext_ratio(tip_idx):
@@ -46,7 +58,7 @@ while cap.isOpened():
             hand_scale = dist_2d(lm[5], lm[0]) if dist_2d(lm[5], lm[0]) != 0 else 1.0
 
             #THUMB
-            # 2. Key landmark distances (normalized by hand scale)
+            #Key landmark distances (normalized by hand scale)
             thumb_to_index_tip = dist_2d(lm[4], lm[8]) / hand_scale
             thumb_to_mid_tip = dist_2d(lm[4], lm[12]) / hand_scale
             
@@ -112,15 +124,20 @@ while cap.isOpened():
             elif (p_ext and m_ext and r_ext and (i_tip_to_thumb < 0.5)):
                 label = "LSC: T"
 
+            #empezo a fallar/ ya no reconoce bien
             #LETTER P: pinky and ring down, middle touch index at 7-6
             elif (not p_ext and not r_ext and i_ext and (mid_to_index_knuckle_6 < 0.4 or mid_to_index_kuckle_7 < 0.4) and not m_ext):
                 label = "LSC: P"
 
-
-            # LETTER V vs R: Index and Middle up
+            #control of H, R, k, V: index and middle up
             elif i_ext and m_ext and not r_ext and not p_ext:
+
+                is_horizontal = abs(lm[8].x - lm[5].x) > abs(lm[8].y - lm[5].y)
+                # LETTER H
+                if is_horizontal or mov_x > 0.04:
+                    label = "LSC: H"
                 #LETTER R: index and middle touch  up
-                if i_tip_to_mid_tip < 0.35:
+                elif i_tip_to_mid_tip < 0.35:
                     label = "LSC: R"
                 #LETTER K: thumb up close to middle and index (6-10)
                 elif(thumb_to_knuckle_6 < 0.4 or thumb_to_knuckle_10 < 0.4):
