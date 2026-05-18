@@ -3,9 +3,9 @@ import mediapipe as mp
 import math
 from collections import deque 
 """
-Letters with motion: G, J, Ñ, S, Z
+Letters with motion: G, Ñ, S, Z
 Improvements possible for: R, Q, M, N, J
-failed: P
+failed: P, Q, O, Ñ
 
 """
 
@@ -22,6 +22,7 @@ def dist_2d(p1, p2):
 wrist_x_history = deque(maxlen=12)
 pinky_history = deque(maxlen=20)  
 j_cooldown = 0
+n_cooldown = 0
 
 cap = cv2.VideoCapture(0)
 
@@ -43,6 +44,9 @@ while cap.isOpened():
 
             if j_cooldown > 0:
                 j_cooldown -= 1
+
+            if n_cooldown > 0: 
+                n_cooldown -= 1 
 
             mov_x = 0
             if len(wrist_x_history) == wrist_x_history.maxlen:
@@ -230,13 +234,19 @@ while cap.isOpened():
                     thumb_to_knuckle_5 < 0.45):
                     label = "LSC: E"
 
-
+                # control of N, Ñ, M
                 # LETTER N/M: index near point 2 and middle near point 3
                 if (index_to_point_2 < 0.35 and middle_to_point_3 < 0.35):
                     if (ring_to_point_1 < 0.45 or ring_to_point_0 < 0.45):
                         label = "LSC: M"
                     else:
-                        label = "LSC: N"
+                        # LETTER Ñ: like N but with movement 
+                        if mov_x > 0.04 or n_cooldown > 0:
+                            label = "LSC: Ñ"
+                            if mov_x > 0.04:
+                                n_cooldown = 15  # Mantiene la Ñ por ~0.5 segundos
+                        else:
+                            label = "LSC: N"
                 
                 # LETTER A: Thumb is very close to point 5 or point 6
                 elif (thumb_to_knuckle_5 < 0.35 or thumb_to_knuckle_6 < 0.35) and not i_hook:
