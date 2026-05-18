@@ -3,8 +3,9 @@ import mediapipe as mp
 import math
 from collections import deque 
 """
-Letters with motion: G, H, J, Ñ, S, Z
-Improvements possible for: R, Q, M, N, P
+Letters with motion: G, J, Ñ, S, Z
+Improvements possible for: R, Q, M, N, J
+failed: P
 
 """
 
@@ -17,7 +18,10 @@ def dist_2d(p1, p2):
     return math.hypot(p1.x - p2.x, p1.y - p2.y)
 
 #for dynamic gestures
+#H
 wrist_x_history = deque(maxlen=12)
+pinky_history = deque(maxlen=20)  
+j_cooldown = 0
 
 cap = cv2.VideoCapture(0)
 
@@ -33,16 +37,18 @@ while cap.isOpened():
             mp_draw.draw_landmarks(img, hand_lms, mp_hands.HAND_CONNECTIONS)
             lm = hand_lms.landmark
 
-            # Guardar la posición X de la muñeca en el historial
             # save wrist X position in history for dynamic gesture detection
             wrist_x_history.append(lm[0].x)
+            pinky_history.append((lm[20].x, lm[20].y))
 
-            # Calcular el desplazamiento horizontal acumulado
+            if j_cooldown > 0:
+                j_cooldown -= 1
+
             mov_x = 0
             if len(wrist_x_history) == wrist_x_history.maxlen:
                 mov_x = abs(wrist_x_history[-1] - wrist_x_history[0])
 
-            # 1. Distance Helper: Tip to Palm Base (Landmark 0)
+            #Distance Helper: Tip to Palm Base (Landmark 0)
             def get_ext_ratio(tip_idx):
                 knuckle_dist = dist_2d(lm[tip_idx-2], lm[0])
                 tip_dist = dist_2d(lm[tip_idx], lm[0])
@@ -161,7 +167,31 @@ while cap.isOpened():
 
             # LETTER I: Only pinky up
             elif p_ext and not i_ext and not m_ext and not r_ext:
-                label = "LSC: I"
+
+                is_j_motion = False 
+
+                if len(pinky_history) == pinky_history.maxlen:
+                    y_coords = [p[1] for p in pinky_history]
+                    x_coords = [p[0] for p in pinky_history]
+                    
+                    max_y = max(y_coords)
+                    min_y = min(y_coords)
+                    max_y_idx = y_coords.index(max_y)
+
+                    vertical_travel = max_y - min_y
+                    horizontal_travel = max(x_coords) - min(x_coords)
+
+                    if vertical_travel > 0.05 and horizontal_travel > 0.03:
+                        if 4 < max_y_idx < 16:  
+                            is_j_motion = True
+
+                if is_j_motion or j_cooldown > 0:
+                    label = "LSC: J"
+                    if is_j_motion:
+                        j_cooldown = 18
+
+                else:
+                    label = "LSC: I"
 
             #LETTER F: only index up and thumb close to index
             elif (not m_ext and not r_ext and not p_ext and i_ext and
