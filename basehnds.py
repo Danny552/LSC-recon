@@ -6,6 +6,7 @@ from collections import deque
 Letters with motion: Ñ, S, Z
 Improvements possible for: R, Q, M, N, J
 failed: P, Q, O, Ñ
+funciona Z pero con dedos separados
 
 """
 
@@ -20,10 +21,12 @@ def dist_2d(p1, p2):
 #for dynamic gestures
 #H
 wrist_x_history = deque(maxlen=12)
-pinky_history = deque(maxlen=20)  
+pinky_history = deque(maxlen=20)
+index_history = deque(maxlen=25) 
 j_cooldown = 0
 n_cooldown = 0
 g_cooldown = 0
+z_cooldown = 0
 
 cap = cv2.VideoCapture(0)
 
@@ -42,6 +45,7 @@ while cap.isOpened():
             # save wrist X position in history for dynamic gesture detection
             wrist_x_history.append(lm[0].x)
             pinky_history.append((lm[20].x, lm[20].y))
+            index_history.append((lm[8].x, lm[8].y))
 
             if j_cooldown > 0:
                 j_cooldown -= 1
@@ -51,6 +55,10 @@ while cap.isOpened():
 
             if g_cooldown > 0: 
                 g_cooldown -= 1
+
+            if z_cooldown > 0:
+                z_cooldown -= 1
+
 
             mov_x = 0
             if len(wrist_x_history) == wrist_x_history.maxlen:
@@ -148,11 +156,29 @@ while cap.isOpened():
             #LETTER P: pinky and ring down, middle touch index at 7-6
             elif (not p_ext and not r_ext and i_ext and (mid_to_index_knuckle_6 < 0.4 or mid_to_index_kuckle_7 < 0.4) and not m_ext):
                 label = "LSC: P"
+            
+
 
             #control of H, R, k, V: index and middle up
             elif i_ext and m_ext and not r_ext and not p_ext:
+                is_z_motion = False
+                if i_ext and m_ext and not r_ext and not p_ext:  # <--- CORREGIDO AQUÍ
+                    if len(index_history) == index_history.maxlen:
+                        x_coords = [p[0] for p in index_history]
+                        y_coords = [p[1] for p in index_history]
+                        
+                        total_dx = sum(abs(x_coords[i] - x_coords[i-1]) for i in range(1, len(x_coords)))
+                        net_dx = abs(x_coords[-1] - x_coords[0])
+                        vertical_travel = max(y_coords) - min(y_coords)
+                        
+                        # Misma matemática de tortuosidad: mucho rastro horizontal, poca distancia neta y baja en pantalla
+                        if total_dx > 0.08 and total_dx > 1.8 * (net_dx if net_dx > 0 else 0.001) and vertical_travel > 0.05:
+                            is_z_motion = True
+                            z_cooldown = 22
 
                 is_horizontal = abs(lm[8].x - lm[5].x) > abs(lm[8].y - lm[5].y)
+
+
                 # LETTER H
                 if is_horizontal or mov_x > 0.04:
                     label = "LSC: H"
@@ -162,6 +188,9 @@ while cap.isOpened():
                 #LETTER K: thumb up close to middle and index (6-10)
                 elif(thumb_to_knuckle_6 < 0.4 or thumb_to_knuckle_10 < 0.4):
                     label = "LSC: K"
+                #funciona z pero con dedos separados
+                elif (i_ext and m_ext and not r_ext and not p_ext) and (is_z_motion or z_cooldown > 0):
+                    label = "LSC: Z"
 
                 #LETTER V: thumb touches ring knuckle (14-15)
                 elif (thumb_to_knuckle_14 < 0.3 or thumb_to_knuckle_15 < 0.3):
