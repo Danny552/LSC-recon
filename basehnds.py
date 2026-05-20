@@ -3,7 +3,7 @@ import mediapipe as mp
 import math
 from collections import deque 
 """
-Letters with motion: G, Ñ, S, Z
+Letters with motion: Ñ, S, Z
 Improvements possible for: R, Q, M, N, J
 failed: P, Q, O, Ñ
 
@@ -23,6 +23,7 @@ wrist_x_history = deque(maxlen=12)
 pinky_history = deque(maxlen=20)  
 j_cooldown = 0
 n_cooldown = 0
+g_cooldown = 0
 
 cap = cv2.VideoCapture(0)
 
@@ -47,6 +48,9 @@ while cap.isOpened():
 
             if n_cooldown > 0: 
                 n_cooldown -= 1 
+
+            if g_cooldown > 0: 
+                g_cooldown -= 1
 
             mov_x = 0
             if len(wrist_x_history) == wrist_x_history.maxlen:
@@ -122,6 +126,12 @@ while cap.isOpened():
             # LETTER B: All extended and touching
             elif i_ext and m_ext and r_ext and p_ext and thumb_to_point_0 < 0.8:
                 label = "LSC: B"
+
+            elif (i_ext or i_hook) and not m_ext and not r_ext and not p_ext and (abs(lm[6].x - lm[5].x) > abs(lm[6].y - lm[5].y) or g_cooldown > 0):
+                label = "LSC: G"
+                # Si la mano está acostada (el dedo se extiende más en X que en Y), reiniciamos el cooldown
+                if abs(lm[6].x - lm[5].x) > abs(lm[6].y - lm[5].y):
+                    g_cooldown = 15
             
 
             # LETTER D: Only index up (make sure index is really extended)
