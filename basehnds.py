@@ -181,7 +181,7 @@ def generate_lsc_frames():
                     if len(pinky_history) == pinky_history.maxlen:
                         y_coords = [p[1] for p in pinky_history]
                         x_coords = [p[0] for p in pinky_history]
-                        max_y_idx = y_coords.index(max.y(y_coords) if y_coords else 0)
+                        max_y_idx = y_coords.index(max(y_coords) if y_coords else 0)
                         if (max(y_coords) - min(y_coords)) > 0.05 and (max(x_coords) - min(x_coords)) > 0.03:
                             if 4 < max_y_idx < 16: is_j_motion = True
                     if is_j_motion or j_cooldown > 0:
