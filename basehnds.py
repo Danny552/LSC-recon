@@ -1,23 +1,41 @@
 import cv2
 import mediapipe as mp
 import math
-from collections import deque 
-"""
-doesn't recognize well: Ñ
-Z works but with the fingers apart
+import pyttsx3
+import threading
+import time
+from collections import deque
+from flask import Flask, Response, jsonify
 
-"""
-
-# Setup
+# --- INITIALIZATION AND SETUP ---
 mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.7, min_tracking_confidence=0.7)
 mp_draw = mp.solutions.drawing_utils
 
+# --- AUDIO FEEDBACK GENERATOR (TTS) ---
+engine = pyttsx3.init()
+engine.setProperty('rate', 160)
+audio_lock = threading.Lock()
+
+def speak_letter_async(letter):
+    """Speaks the letter in a separate thread to prevent webcam/stream freezing."""
+    def target():
+        with audio_lock:
+            engine.say(letter)
+            engine.runAndWait()
+    threading.Thread(target=target, daemon=True).start()
+
+# --- WORD WRITING ENGINE VARIABLES ---
+current_word = ""               # Holds the typed text string
+stable_letter = "Searching..."  # Current tracked letter match
+stable_since = None             # Timestamp when the letter first became stable
+REQUIRED_STABLE_TIME = 2.0      # Time window in seconds to type a letter
+
+# --- DISTANCE HELPER ---
 def dist_2d(p1, p2):
     return math.hypot(p1.x - p2.x, p1.y - p2.y)
 
-#for dynamic gestures
-#H
+# --- DYNAMIC GESTURE HISTORIES ---
 wrist_x_history = deque(maxlen=12)
 pinky_history = deque(maxlen=20)
 index_history = deque(maxlen=25) 
@@ -27,314 +45,280 @@ g_cooldown = 0
 z_cooldown = 0
 s_cooldown = 0
 
+# --- FLASK ROUTING ---
+app = Flask(__name__)
 cap = cv2.VideoCapture(0)
+cap.set(cv2.CAP_PROP_BUFFERSIZE, 1) # Set buffer size low for instant frame delivery
 
-while cap.isOpened():
-    success, img = cap.read()
-    if not success: break
-    
-    results = hands.process(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
-    label = "Searching..."
+def generate_lsc_frames():
+    global j_cooldown, n_cooldown, g_cooldown, z_cooldown, s_cooldown
+    global current_word, stable_letter, stable_since
 
-    if results.multi_hand_landmarks:
-        for hand_lms in results.multi_hand_landmarks:
-            mp_draw.draw_landmarks(img, hand_lms, mp_hands.HAND_CONNECTIONS)
-            lm = hand_lms.landmark
+    while cap.isOpened():
+        cap.grab()
+        success, img = cap.retrieve()
+        if not success:
+            continue
+        
+        results = hands.process(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+        label = "Searching..."
 
-            # save wrist X position in history for dynamic gesture detection
-            wrist_x_history.append(lm[0].x)
-            pinky_history.append((lm[20].x, lm[20].y))
-            index_history.append((lm[8].x, lm[8].y))
+        if results.multi_hand_landmarks:
+            for hand_lms in results.multi_hand_landmarks:
+                mp_draw.draw_landmarks(img, hand_lms, mp_hands.HAND_CONNECTIONS)
+                lm = hand_lms.landmark
 
-            if j_cooldown > 0:
-                j_cooldown -= 1
+                # Update gesture deques
+                wrist_x_history.append(lm[0].x)
+                pinky_history.append((lm[20].x, lm[20].y))
+                index_history.append((lm[8].x, lm[8].y))
 
-            if n_cooldown > 0: 
-                n_cooldown -= 1 
+                if j_cooldown > 0: j_cooldown -= 1
+                if n_cooldown > 0: n_cooldown -= 1 
+                if g_cooldown > 0: g_cooldown -= 1
+                if z_cooldown > 0: z_cooldown -= 1
+                if s_cooldown > 0: s_cooldown -= 1
 
-            if g_cooldown > 0: 
-                g_cooldown -= 1
+                mov_x = 0
+                if len(wrist_x_history) == wrist_x_history.maxlen:
+                    mov_x = abs(wrist_x_history[-1] - wrist_x_history[0])
 
-            if z_cooldown > 0:
-                z_cooldown -= 1
+                def get_ext_ratio(tip_idx):
+                    knuckle_dist = dist_2d(lm[tip_idx-2], lm[0])
+                    tip_dist = dist_2d(lm[tip_idx], lm[0])
+                    return tip_dist / knuckle_dist if knuckle_dist != 0 else 0
 
-            if s_cooldown > 0:
-                s_cooldown -= 1
+                i_ext = get_ext_ratio(8) > 1.2
+                m_ext = get_ext_ratio(12) > 1.2
+                r_ext = get_ext_ratio(16) > 1.2
+                p_ext = get_ext_ratio(20) > 1.2
 
+                hand_scale = dist_2d(lm[5], lm[0]) if dist_2d(lm[5], lm[0]) != 0 else 1.0
 
-            mov_x = 0
-            if len(wrist_x_history) == wrist_x_history.maxlen:
-                mov_x = abs(wrist_x_history[-1] - wrist_x_history[0])
+                # Key Metric Ratios
+                thumb_to_index_tip = dist_2d(lm[4], lm[8]) / hand_scale
+                thumb_to_mid_tip = dist_2d(lm[4], lm[12]) / hand_scale
+                thumb_to_point_1 = dist_2d(lm[4], lm[1]) / hand_scale
+                thumb_to_knuckle_5 = dist_2d(lm[4], lm[5]) / hand_scale
+                thumb_to_knuckle_6 = dist_2d(lm[4], lm[6]) / hand_scale
+                thumb_to_knuckle_9 = dist_2d(lm[4], lm[9]) / hand_scale
+                thumb_to_knuckle_10 = dist_2d(lm[4], lm[10]) / hand_scale
+                thumb_to_knuckle_11 = dist_2d(lm[4], lm[11]) / hand_scale
+                thumb_to_knuckle_14 = dist_2d(lm[4], lm[14]) / hand_scale
+                thumb_to_knuckle_15 = dist_2d(lm[4], lm[15]) / hand_scale
+                thumb_to_knuckle_18 = dist_2d(lm[4], lm[18]) / hand_scale
+                thumb_to_knuckle_19 = dist_2d(lm[4], lm[19]) / hand_scale
+                thumb_to_point_0 = dist_2d(lm[4], lm[0]) / hand_scale
 
-            #Distance Helper: Tip to Palm Base (Landmark 0)
-            def get_ext_ratio(tip_idx):
-                knuckle_dist = dist_2d(lm[tip_idx-2], lm[0])
-                tip_dist = dist_2d(lm[tip_idx], lm[0])
-                return tip_dist / knuckle_dist if knuckle_dist != 0 else 0
+                i_tip_to_thumb = dist_2d(lm[8], lm[4]) / hand_scale
+                m_tip_to_thumb = dist_2d(lm[12], lm[4]) / hand_scale
+                r_tip_to_thumb = dist_2d(lm[16], lm[4]) / hand_scale
+                p_tip_to_thumb = dist_2d(lm[20], lm[4]) / hand_scale
 
-            i_ext = get_ext_ratio(8) > 1.2
-            m_ext = get_ext_ratio(12) > 1.2
-            r_ext = get_ext_ratio(16) > 1.2
-            p_ext = get_ext_ratio(20) > 1.2
+                i_tip_to_mid_tip = dist_2d(lm[8], lm[12]) / hand_scale
+                index_to_point_2 = dist_2d(lm[8], lm[2]) / hand_scale
+                index_tip_to_pip = dist_2d(lm[8], lm[6]) / hand_scale
+                index_tip_to_mcp = dist_2d(lm[8], lm[5]) / hand_scale
+                i_hook = (not i_ext) and index_tip_to_pip < 0.25 and index_tip_to_mcp < 0.55
 
-            # --- HAND SCALE (to normalize distances) ---
-            # Use the distance from the index knuckle to the wrist as a size reference
-            hand_scale = dist_2d(lm[5], lm[0]) if dist_2d(lm[5], lm[0]) != 0 else 1.0
+                mid_to_index_knuckle_6 = dist_2d(lm[9], lm[6]) / hand_scale
+                mid_to_index_kuckle_7 = dist_2d(lm[9], lm[7]) / hand_scale
+                middle_to_point_3 = dist_2d(lm[12], lm[3]) / hand_scale
 
-            #THUMB
-            #Key landmark distances (normalized by hand scale)
-            thumb_to_index_tip = dist_2d(lm[4], lm[8]) / hand_scale
-            thumb_to_mid_tip = dist_2d(lm[4], lm[12]) / hand_scale
-            
-            # specific distances from thumb (4) to knuckles or key points
-            thumb_to_point_1 = dist_2d(lm[4], lm[1]) / hand_scale
-            thumb_to_knuckle_5 = dist_2d(lm[4], lm[5]) / hand_scale
-            thumb_to_knuckle_6 = dist_2d(lm[4], lm[6]) / hand_scale
-            thumb_to_knuckle_9 = dist_2d(lm[4], lm[9]) / hand_scale
-            thumb_to_knuckle_10 = dist_2d(lm[4], lm[10]) / hand_scale
-            thumb_to_knuckle_11 = dist_2d(lm[4], lm[11]) / hand_scale
-            thumb_to_knuckle_14 = dist_2d(lm[4], lm[14]) / hand_scale
-            thumb_to_knuckle_15 = dist_2d(lm[4], lm[15]) / hand_scale
-            thumb_to_knuckle_18 = dist_2d(lm[4], lm[18]) / hand_scale
-            thumb_to_knuckle_19 = dist_2d(lm[4], lm[19]) / hand_scale
-            thumb_to_point_0 = dist_2d(lm[4], lm[0]) / hand_scale
+                ring_to_point_1 = dist_2d(lm[16], lm[1]) / hand_scale
+                ring_to_point_0 = dist_2d(lm[16], lm[0]) / hand_scale
 
-
-            # distance from fingertips to thumb tip
-            i_tip_to_thumb = dist_2d(lm[8], lm[4]) / hand_scale
-            m_tip_to_thumb = dist_2d(lm[12], lm[4]) / hand_scale
-            r_tip_to_thumb = dist_2d(lm[16], lm[4]) / hand_scale
-            p_tip_to_thumb = dist_2d(lm[20], lm[4]) / hand_scale
-
-            #INDEX
-            # distance index to middle
-            i_tip_to_mid_tip = dist_2d(lm[8], lm[12]) / hand_scale
-            # distance index to point 2
-            index_to_point_2 = dist_2d(lm[8], lm[2]) / hand_scale
-            # index hook for X (tip close to PIP, not extended)
-            index_tip_to_pip = dist_2d(lm[8], lm[6]) / hand_scale
-            index_tip_to_mcp = dist_2d(lm[8], lm[5]) / hand_scale
-            i_hook = (not i_ext) and index_tip_to_pip < 0.25 and index_tip_to_mcp < 0.55
-
-            #MIDDLE
-            # distance middle to index points (7-6)
-            mid_to_index_knuckle_6 = dist_2d(lm[9], lm[6]) / hand_scale
-            mid_to_index_kuckle_7 = dist_2d(lm[9], lm[7]) / hand_scale
-            # distance middle to point 3
-            middle_to_point_3 = dist_2d(lm[12], lm[3]) / hand_scale
-
-
-            # RING
-            # distance ring 0 - 1
-            ring_to_point_1 = dist_2d(lm[16], lm[1]) / hand_scale
-            ring_to_point_0 = dist_2d(lm[16], lm[0]) / hand_scale
-
-            is_s_motion = False
-            if i_ext and not m_ext and not r_ext and not p_ext:  # <--- Solo el índice arriba
-                if len(index_history) == index_history.maxlen:
-                    x_coords = [p[0] for p in index_history]
-                    y_coords = [p[1] for p in index_history]
-                    
-                    # Medimos el recorrido total en ambos ejes para detectar curvas
-                    total_dx = sum(abs(x_coords[i] - x_coords[i-1]) for i in range(1, len(x_coords)))
-                    total_dy = sum(abs(y_coords[i] - y_coords[i-1]) for i in range(1, len(y_coords)))
-                    
-                    # Si el dedo dibuja curvas amplias en el aire (recorrido alto en X y en Y)
-                    if total_dx > 0.06 and total_dy > 0.06:
-                        is_s_motion = True
-                        s_cooldown = 20
-
-            # --- LSC TROUBLESHOOTING LOGIC ---
-
-            # LETTER Q: All extended but touching and the top 
-            if (i_ext and m_ext and r_ext and p_ext and 
-            (thumb_to_index_tip < 0.25 or thumb_to_mid_tip < 0.25)):
-                label = "LSC: Q"
-
-            # LETTER B: All extended and touching
-            elif i_ext and m_ext and r_ext and p_ext and thumb_to_point_0 < 0.8:
-                label = "LSC: B"
-
-            elif (i_ext or i_hook) and not m_ext and not r_ext and not p_ext and (abs(lm[6].x - lm[5].x) > abs(lm[6].y - lm[5].y) or g_cooldown > 0):
-                label = "LSC: G"
-                # Si la mano está acostada (el dedo se extiende más en X que en Y), reiniciamos el cooldown
-                if abs(lm[6].x - lm[5].x) > abs(lm[6].y - lm[5].y):
-                    g_cooldown = 15
-
-            elif (i_ext and not m_ext and not r_ext and not p_ext) and (is_s_motion or s_cooldown > 0):
-                label = "LSC: S"
-            
-
-            # LETTER D: Only index up (make sure index is really extended)
-            elif (i_ext and not m_ext and not r_ext and not p_ext and
-            index_tip_to_mcp > 0.65 and index_tip_to_pip > 0.35 and
-            (m_tip_to_thumb < 0.4 and r_tip_to_thumb < 0.4 and p_tip_to_thumb < 0.4)):
-                label = "LSC: D"
-            
-            #LETTER T: index and thumb touching, other fingers down 
-            elif (p_ext and m_ext and r_ext and (i_tip_to_thumb < 0.5)):
-                label = "LSC: T"
-
-            #LETTER P: pinky and ring down, middle touch index at 7-6
-            elif (not p_ext and not r_ext and i_ext and
-            (mid_to_index_knuckle_6 < 0.4 or mid_to_index_kuckle_7 < 0.4)):
-                label = "LSC: P"
-            
-
-
-            #control of H, R, k, V: index and middle up
-            elif i_ext and m_ext and not r_ext and not p_ext:
-
-                is_z_motion = False
-                if i_ext and m_ext and not r_ext and not p_ext: 
-                    if i_tip_to_mid_tip < 0.6:
+                is_s_motion = False
+                if i_ext and not m_ext and not r_ext and not p_ext:
+                    if len(index_history) == index_history.maxlen:
                         x_coords = [p[0] for p in index_history]
                         y_coords = [p[1] for p in index_history]
-                        
+                        total_dx = sum(abs(x_coords[i] - x_coords[i-1]) for i in range(1, len(x_coords)))
+                        total_dy = sum(abs(y_coords[i] - y_coords[i-1]) for i in range(1, len(y_coords)))
+                        if total_dx > 0.06 and total_dy > 0.06:
+                            is_s_motion = True
+                            s_cooldown = 20
+
+                # --- EXTRACTED LSC SIGN ALGORITHMS ---
+                if (i_ext and m_ext and r_ext and p_ext and (thumb_to_index_tip < 0.25 or thumb_to_mid_tip < 0.25)):
+                    label = "Q"
+                elif i_ext and m_ext and r_ext and p_ext and thumb_to_point_0 < 0.8:
+                    label = "B"
+                elif (i_ext or i_hook) and not m_ext and not r_ext and not p_ext and (abs(lm[6].x - lm[5].x) > abs(lm[6].y - lm[5].y) or g_cooldown > 0):
+                    label = "G"
+                    if abs(lm[6].x - lm[5].x) > abs(lm[6].y - lm[5].y): g_cooldown = 15
+                elif (i_ext and not m_ext and not r_ext and not p_ext) and (is_s_motion or s_cooldown > 0):
+                    label = "S"
+                elif (i_ext and not m_ext and not r_ext and not p_ext and index_tip_to_mcp > 0.65 and index_tip_to_pip > 0.35 and (m_tip_to_thumb < 0.4 and r_tip_to_thumb < 0.4 and p_tip_to_thumb < 0.4)):
+                    label = "D"
+                elif (p_ext and m_ext and r_ext and (i_tip_to_thumb < 0.5)):
+                    label = "T"
+                elif (not p_ext and not r_ext and i_ext and (mid_to_index_knuckle_6 < 0.4 or mid_to_index_kuckle_7 < 0.4)):
+                    label = "P"
+                elif i_ext and m_ext and not r_ext and not p_ext:
+                    is_z_motion = False
+                    if len(index_history) == index_history.maxlen:
+                        x_coords = [p[0] for p in index_history]
+                        y_coords = [p[1] for p in index_history]
                         total_dx = sum(abs(x_coords[i] - x_coords[i-1]) for i in range(1, len(x_coords)))
                         net_dx = abs(x_coords[-1] - x_coords[0])
                         vertical_travel = max(y_coords) - min(y_coords)
-                        
-                        # Misma matemática de tortuosidad: mucho rastro horizontal, poca distancia neta y baja en pantalla
                         if total_dx > 0.08 and total_dx > 1.8 * (net_dx if net_dx > 0 else 0.001) and vertical_travel > 0.05:
                             is_z_motion = True
                             z_cooldown = 22
 
-                is_horizontal = abs(lm[8].x - lm[5].x) > abs(lm[8].y - lm[5].y)
-
-
-                # LETTER H
-                if is_horizontal or mov_x > 0.04:
-                    label = "LSC: H"
-                #LETTER R: index and middle touch  up
-                elif i_tip_to_mid_tip < 0.35:
-                    label = "LSC: R"
-                #LETTER K: thumb up close to middle and index (6-10)
-                elif(thumb_to_knuckle_6 < 0.4 or thumb_to_knuckle_10 < 0.4):
-                    label = "LSC: K"
-                #LETTER Z: with fingers apart but with motion
-                elif (i_ext and m_ext and not r_ext and not p_ext and i_tip_to_mid_tip < 0.6) and (is_z_motion or z_cooldown > 0):
-                    label = "LSC: Z"
-
-                #LETTER V: thumb touches ring knuckle (14-15)
-                elif (thumb_to_knuckle_14 < 0.3 or thumb_to_knuckle_15 < 0.3):
-                    label = "LSC: V"
-
-            # LETTER U: Index and Pinky up
-            elif i_ext and p_ext and not m_ext and not r_ext:
-                label = "LSC: U"
-            
-            #LETER W: Three fingers up (Index, Middle, Ring)
-            elif r_ext and m_ext and i_ext and not p_ext:
-                label = "LSC: W"
-
-            # LETTER Y: Thumb and Pinky out
-            elif p_ext and thumb_to_knuckle_5 > 0.5 and not i_ext and not m_ext and not r_ext:
-                label = "LSC: Y"
-
-            # LETTER I: Only pinky up
-            elif p_ext and not i_ext and not m_ext and not r_ext:
-
-                is_j_motion = False 
-
-                if len(pinky_history) == pinky_history.maxlen:
-                    y_coords = [p[1] for p in pinky_history]
-                    x_coords = [p[0] for p in pinky_history]
-                    
-                    max_y = max(y_coords)
-                    min_y = min(y_coords)
-                    max_y_idx = y_coords.index(max_y)
-
-                    vertical_travel = max_y - min_y
-                    horizontal_travel = max(x_coords) - min(x_coords)
-
-                    if vertical_travel > 0.05 and horizontal_travel > 0.03:
-                        if 4 < max_y_idx < 16:  
-                            is_j_motion = True
-
-                if is_j_motion or j_cooldown > 0:
-                    label = "LSC: J"
-                    if is_j_motion:
-                        j_cooldown = 18
-
-                else:
-                    label = "LSC: I"
-
-            #LETTER F: only index up and thumb close to index
-            elif (not m_ext and not r_ext and not p_ext and i_ext and
-            (thumb_to_knuckle_5 < 0.35 or thumb_to_knuckle_6 < 0.35)):
-                label = "LSC: F"
-
-            # LETTER X: index hook + thumb near middle knuckle 
-            elif (i_hook and not m_ext and not r_ext and not p_ext and 
-            (thumb_to_knuckle_18 < 0.8 or thumb_to_knuckle_19 < 0.8 or thumb_to_knuckle_10 < 0.5 or 
-            thumb_to_knuckle_14 < 0.5) and
-            thumb_to_knuckle_9 < 0.5 and thumb_to_point_0 > 0.45 and thumb_to_index_tip > 0.25):
-                label = "LSC: X"
-
-
-            # --- THE "A" vs "O" vs "C" vs "E" ZONE ---
-            # Condition: All long fingers closed (include the pinky to ensure a fist)
-            elif not i_ext and not m_ext and not r_ext and not p_ext:
-
-                # distances for E 
-                i_tip_to_mcp = dist_2d(lm[8], lm[5]) / hand_scale
-                m_tip_to_mcp = dist_2d(lm[12], lm[9]) / hand_scale
-                r_tip_to_mcp = dist_2d(lm[16], lm[13]) / hand_scale
-                p_tip_to_mcp = dist_2d(lm[20], lm[17]) / hand_scale
-
-                # Thumb X positions relative to the fingers' MCP joints
-                thumb_x = lm[4].x
-                idx_mcp_x = lm[5].x
-                mid_mcp_x = lm[9].x
-                ring_mcp_x = lm[13].x
-                
-                # LETTER O: Circle (Thumb tip touches Index and/or Middle tip)
-                if thumb_to_index_tip < 0.25 or thumb_to_mid_tip < 0.2:
-                    label = "LSC: O"
-                
-                #LETTER E: all fingers curled, thumb tucked across palm
-                elif (i_tip_to_mcp < 0.5 and m_tip_to_mcp < 0.5 and r_tip_to_mcp < 0.5 
-                    and p_tip_to_mcp < 0.45 and (thumb_to_point_0 < 0.8 or thumb_to_point_1 < 1)and
-                    thumb_to_knuckle_5 > 0.45 ):
-                    label = "LSC: E"
-
-                # control of N, Ñ, M
-                # LETTER N/M: index near point 2 and middle near point 3
-                elif (index_to_point_2 < 0.35 and middle_to_point_3 < 0.35):
-                    if (ring_to_point_1 < 0.45 or ring_to_point_0 < 0.45):
-                        label = "LSC: M"
-                    else:
-                        # LETTER Ñ: like N but with movement 
-                        if mov_x > 0.04 or n_cooldown > 0:
-                            label = "LSC: Ñ"
-                            if mov_x > 0.04:
-                                n_cooldown = 15  # Mantiene la Ñ por ~0.5 segundos
+                    is_horizontal = abs(lm[8].x - lm[5].x) > abs(lm[8].y - lm[5].y)
+                    if is_horizontal or mov_x > 0.04: label = "H"
+                    elif i_tip_to_mid_tip < 0.35: label = "R"
+                    elif (thumb_to_knuckle_6 < 0.4 or thumb_to_knuckle_10 < 0.4): label = "K"
+                    elif (i_tip_to_mid_tip < 0.6) and (is_z_motion or z_cooldown > 0): label = "Z"
+                    elif (thumb_to_knuckle_14 < 0.3 or thumb_to_knuckle_15 < 0.3): label = "V"
+                elif i_ext and p_ext and not m_ext and not r_ext: label = "U"
+                elif r_ext and m_ext and i_ext and not p_ext: label = "W"
+                elif p_ext and thumb_to_knuckle_5 > 0.5 and not i_ext and not m_ext and not r_ext: label = "Y"
+                elif p_ext and not i_ext and not m_ext and not r_ext:
+                    is_j_motion = False 
+                    if len(pinky_history) == pinky_history.maxlen:
+                        y_coords = [p[1] for p in pinky_history]
+                        x_coords = [p[0] for p in pinky_history]
+                        max_y_idx = y_coords.index(max.y(y_coords) if y_coords else 0)
+                        if (max(y_coords) - min(y_coords)) > 0.05 and (max(x_coords) - min(x_coords)) > 0.03:
+                            if 4 < max_y_idx < 16: is_j_motion = True
+                    if is_j_motion or j_cooldown > 0:
+                        label = "J"
+                        if is_j_motion: j_cooldown = 18
+                    else: label = "I"
+                elif (not m_ext and not r_ext and not p_ext and i_ext and (thumb_to_knuckle_5 < 0.35 or thumb_to_knuckle_6 < 0.35)):
+                    label = "F"
+                elif (i_hook and not m_ext and not r_ext and not p_ext and (thumb_to_knuckle_18 < 0.8 or thumb_to_knuckle_19 < 0.8 or thumb_to_knuckle_10 < 0.5 or thumb_to_knuckle_14 < 0.5) and thumb_to_knuckle_9 < 0.5 and thumb_to_point_0 > 0.45 and thumb_to_index_tip > 0.25):
+                    label = "X"
+                elif not i_ext and not m_ext and not r_ext and not p_ext:
+                    i_tip_to_mcp = dist_2d(lm[8], lm[5]) / hand_scale
+                    m_tip_to_mcp = dist_2d(lm[12], lm[9]) / hand_scale
+                    r_tip_to_mcp = dist_2d(lm[16], lm[13]) / hand_scale
+                    p_tip_to_mcp = dist_2d(lm[20], lm[17]) / hand_scale
+                    if thumb_to_index_tip < 0.25 or thumb_to_mid_tip < 0.2: label = "O"
+                    elif (i_tip_to_mcp < 0.5 and m_tip_to_mcp < 0.5 and r_tip_to_mcp < 0.5 and p_tip_to_mcp < 0.45 and (thumb_to_point_0 < 0.8 or thumb_to_point_1 < 1) and thumb_to_knuckle_5 > 0.45):
+                        label = "E"
+                    elif (index_to_point_2 < 0.35 and middle_to_point_3 < 0.35):
+                        if (ring_to_point_1 < 0.45 or ring_to_point_0 < 0.45): label = "M"
                         else:
-                            label = "LSC: N"
+                            if mov_x > 0.04 or n_cooldown > 0:
+                                label = "Ñ"
+                                if mov_x > 0.04: n_cooldown = 15
+                            else: label = "N"
+                    elif (thumb_to_knuckle_5 < 0.35 or thumb_to_knuckle_6 < 0.35) and not i_hook: label = "A"
+                    elif thumb_to_index_tip > 0.45 and thumb_to_index_tip < 0.65: label = "C"
+                    else: label = "closed fist"
+                elif i_ext and thumb_to_knuckle_5 > 0.5 and not m_ext:
+                    label = "LSC: L"
+
+        # --- TIMER ENGINE FOR WRITING SYSTEM ---
+        valid_signs = ["A","B","C","D","E","F","G","H","I","J","K","L","M","N","Ñ","O","P","Q","R","S","T","U","V","W","X","Y","Z"]
+        
+        if label in valid_signs:
+            if label == stable_letter:
+                elapsed = time.time() - stable_since
+                remaining_time = max(0.0, REQUIRED_STABLE_TIME - elapsed)
                 
-                # LETTER A: Thumb is very close to point 5 or point 6
-                elif (thumb_to_knuckle_5 < 0.35 or thumb_to_knuckle_6 < 0.35) and not i_hook:
-                    label = "LSC: A"
+                # Visual ring progress indicator on video frame
+                cv2.circle(img, (70, 200), 30, (50, 50, 50), -1)
+                angle = int((elapsed / REQUIRED_STABLE_TIME) * 360)
+                cv2.ellipse(img, (70, 200), (30, 30), 0, 0, min(angle, 360), (0, 255, 0), 4)
                 
-                # LETTER C: Claw (Fingers curved, but a wide gap)
-                elif thumb_to_index_tip > 0.45 and thumb_to_index_tip < 0.65:
-                    label = "LSC: C"
-                
-                else:
-                    label = "closed fist"
+                if elapsed >= REQUIRED_STABLE_TIME:
+                    current_word += label  # Commit the letter to the text engine
+                    speak_letter_async(label)
+                    stable_since = time.time() # Reset clock to allow typing repeats
+            else:
+                stable_letter = label
+                stable_since = time.time()
+        else:
+            stable_letter = "Searching..."
+            stable_since = None
 
-            # LETTER L: Index up + Thumb out
-            elif i_ext and thumb_to_knuckle_5 > 0.5 and not m_ext:
-                label = "LSC: L"
+        # Graphic HUD Layer
+        cv2.putText(img, f"Active: {label}", (20, 70), cv2.FONT_HERSHEY_SIMPLEX, 1.8, (0, 255, 0), 4)
+        cv2.putText(img, f"Word: {current_word}", (20, 440), cv2.FONT_HERSHEY_SIMPLEX, 1.3, (255, 255, 255), 3)
 
-            
-            
+        ret, buffer = cv2.imencode('.jpg', img)
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
 
-    # Display results
-    cv2.putText(img, label, (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 0), 4)
-    cv2.imshow("LSC Troubleshooter", img)
-    if cv2.waitKey(1) & 0xFF == ord('q'): break
+# --- WEB OVERLAYS AND ENDPOINTS ---
+@app.route('/video_feed')
+def video_feed():
+    return Response(generate_lsc_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
-cap.release()
-cv2.destroyAllWindows()
+@app.route('/get_data')
+def get_data():
+    """Poll endpoint to keep the web dashboard metrics in sync."""
+    global current_word, stable_letter, stable_since
+    elapsed = (time.time() - stable_since) if stable_since else 0.0
+    pct = min(100, int((elapsed / REQUIRED_STABLE_TIME) * 100)) if stable_since else 0
+    return jsonify({
+        "word": current_word,
+        "letter": stable_letter,
+        "progress": pct
+    })
+
+@app.route('/clear_word')
+def clear_word():
+    global current_word
+    current_word = ""
+    return jsonify({"status": "cleared"})
+
+@app.route('/')
+def index():
+    return """
+    <html>
+    <head>
+        <title>LSC Production Server</title>
+        <style>
+            body { background: #121212; color: #fff; font-family: 'Segoe UI', Tahoma, sans-serif; margin:0; padding: 20px; text-align:center;}
+            .container { display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; margin-top:20px; }
+            .box { background: #1e1e1e; padding: 20px; border-radius: 12px; border: 1px solid #333; }
+            img { border: 3px solid #00ff00; border-radius: 8px; width: 640px; height: 480px; }
+            .panel { width: 350px; display: flex; flex-direction: column; justify-content: space-between; }
+            .word-box { font-size: 32px; background: #000; padding: 15px; color: #00ff00; border-radius: 6px; min-height: 45px; letter-spacing: 2px; }
+            .progress-bar { background: #333; border-radius: 20px; height: 20px; width: 100%; overflow: hidden; margin-top: 10px; }
+            .progress-fill { background: #00ff00; width: 0%; height: 100%; transition: width 0.1s linear; }
+            button { background: #ff3333; color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; margin-top: 15px;}
+            button:hover { background: #cc0000; }
+        </style>
+        <script>
+            setInterval(async () => {
+                let res = await fetch('/get_data');
+                let data = await res.json();
+                document.getElementById('word').innerText = data.word || "[Empty]";
+                document.getElementById('live-letter').innerText = data.letter;
+                document.getElementById('progress').style.width = data.progress + "%";
+            }, 100);
+            async function clearText() { await fetch('/clear_word'); }
+        </script>
+    </head>
+    <body>
+        <h2>LSC Sign-to-Text Engine</h2>
+        <p>Host Processing Architecture Mode</p>
+        <div class="container">
+            <div class="box"><img src="/video_feed"></div>
+            <div class="box panel">
+                <div>
+                    <h3>Current Sign</h3>
+                    <h1 id="live-letter" style="color:#00ff00; font-size:64px; margin:10px 0;">-</h1>
+                    <p>Hold static for 2 seconds to write</p>
+                    <div class="progress-bar"><div id="progress" class="progress-fill"></div></div>
+                </div>
+                <div>
+                    <h3>Constructed Sentences</h3>
+                    <div id="word" class="word-box">[Empty]</div>
+                    <button onclick="clearText()">Clear Text Engine</button>
+                </div>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
