@@ -3,10 +3,8 @@ import mediapipe as mp
 import math
 from collections import deque 
 """
-Letters with motion: Ñ, S, Z
-Improvements possible for: R, Q, M, N, J
-failed: P, Q, O, Ñ
-funciona Z pero con dedos separados
+doesn't recognize well: Ñ
+Z works but with the fingers apart
 
 """
 
@@ -89,13 +87,18 @@ while cap.isOpened():
             thumb_to_mid_tip = dist_2d(lm[4], lm[12]) / hand_scale
             
             # specific distances from thumb (4) to knuckles or key points
+            thumb_to_point_1 = dist_2d(lm[4], lm[1]) / hand_scale
             thumb_to_knuckle_5 = dist_2d(lm[4], lm[5]) / hand_scale
             thumb_to_knuckle_6 = dist_2d(lm[4], lm[6]) / hand_scale
             thumb_to_knuckle_9 = dist_2d(lm[4], lm[9]) / hand_scale
             thumb_to_knuckle_10 = dist_2d(lm[4], lm[10]) / hand_scale
+            thumb_to_knuckle_11 = dist_2d(lm[4], lm[11]) / hand_scale
             thumb_to_knuckle_14 = dist_2d(lm[4], lm[14]) / hand_scale
             thumb_to_knuckle_15 = dist_2d(lm[4], lm[15]) / hand_scale
+            thumb_to_knuckle_18 = dist_2d(lm[4], lm[18]) / hand_scale
+            thumb_to_knuckle_19 = dist_2d(lm[4], lm[19]) / hand_scale
             thumb_to_point_0 = dist_2d(lm[4], lm[0]) / hand_scale
+
 
             # distance from fingertips to thumb tip
             i_tip_to_thumb = dist_2d(lm[8], lm[4]) / hand_scale
@@ -172,9 +175,9 @@ while cap.isOpened():
             elif (p_ext and m_ext and r_ext and (i_tip_to_thumb < 0.5)):
                 label = "LSC: T"
 
-            #empezo a fallar/ ya no reconoce bien
             #LETTER P: pinky and ring down, middle touch index at 7-6
-            elif (not p_ext and not r_ext and i_ext and (mid_to_index_knuckle_6 < 0.4 or mid_to_index_kuckle_7 < 0.4) and not m_ext):
+            elif (not p_ext and not r_ext and i_ext and
+            (mid_to_index_knuckle_6 < 0.4 or mid_to_index_kuckle_7 < 0.4)):
                 label = "LSC: P"
             
 
@@ -263,7 +266,9 @@ while cap.isOpened():
                 label = "LSC: F"
 
             # LETTER X: index hook + thumb near middle knuckle 
-            elif (i_hook and not m_ext and not r_ext and not p_ext and
+            elif (i_hook and not m_ext and not r_ext and not p_ext and 
+            (thumb_to_knuckle_18 < 0.8 or thumb_to_knuckle_19 < 0.8 or thumb_to_knuckle_10 < 0.5 or 
+            thumb_to_knuckle_14 < 0.5) and
             thumb_to_knuckle_9 < 0.5 and thumb_to_point_0 > 0.45 and thumb_to_index_tip > 0.25):
                 label = "LSC: X"
 
@@ -290,13 +295,13 @@ while cap.isOpened():
                 
                 #LETTER E: all fingers curled, thumb tucked across palm
                 elif (i_tip_to_mcp < 0.5 and m_tip_to_mcp < 0.5 and r_tip_to_mcp < 0.5 
-                    and p_tip_to_mcp < 0.45 and thumb_to_point_0 < 0.6 and
-                    thumb_to_knuckle_5 < 0.45):
+                    and p_tip_to_mcp < 0.45 and (thumb_to_point_0 < 0.8 or thumb_to_point_1 < 1)and
+                    thumb_to_knuckle_5 > 0.45 ):
                     label = "LSC: E"
 
                 # control of N, Ñ, M
                 # LETTER N/M: index near point 2 and middle near point 3
-                if (index_to_point_2 < 0.35 and middle_to_point_3 < 0.35):
+                elif (index_to_point_2 < 0.35 and middle_to_point_3 < 0.35):
                     if (ring_to_point_1 < 0.45 or ring_to_point_0 < 0.45):
                         label = "LSC: M"
                     else:
@@ -313,11 +318,11 @@ while cap.isOpened():
                     label = "LSC: A"
                 
                 # LETTER C: Claw (Fingers curved, but a wide gap)
-                elif thumb_to_index_tip > 0.45 and thumb_to_index_tip < 0.8:
+                elif thumb_to_index_tip > 0.45 and thumb_to_index_tip < 0.65:
                     label = "LSC: C"
                 
                 else:
-                    label = "LSC: E"
+                    label = "closed fist"
 
             # LETTER L: Index up + Thumb out
             elif i_ext and thumb_to_knuckle_5 > 0.5 and not m_ext:
