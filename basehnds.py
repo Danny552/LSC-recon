@@ -27,6 +27,7 @@ j_cooldown = 0
 n_cooldown = 0
 g_cooldown = 0
 z_cooldown = 0
+s_cooldown = 0
 
 cap = cv2.VideoCapture(0)
 
@@ -58,6 +59,9 @@ while cap.isOpened():
 
             if z_cooldown > 0:
                 z_cooldown -= 1
+
+            if s_cooldown > 0:
+                s_cooldown -= 1
 
 
             mov_x = 0
@@ -122,7 +126,20 @@ while cap.isOpened():
             ring_to_point_1 = dist_2d(lm[16], lm[1]) / hand_scale
             ring_to_point_0 = dist_2d(lm[16], lm[0]) / hand_scale
 
-
+            is_s_motion = False
+            if i_ext and not m_ext and not r_ext and not p_ext:  # <--- Solo el índice arriba
+                if len(index_history) == index_history.maxlen:
+                    x_coords = [p[0] for p in index_history]
+                    y_coords = [p[1] for p in index_history]
+                    
+                    # Medimos el recorrido total en ambos ejes para detectar curvas
+                    total_dx = sum(abs(x_coords[i] - x_coords[i-1]) for i in range(1, len(x_coords)))
+                    total_dy = sum(abs(y_coords[i] - y_coords[i-1]) for i in range(1, len(y_coords)))
+                    
+                    # Si el dedo dibuja curvas amplias en el aire (recorrido alto en X y en Y)
+                    if total_dx > 0.06 and total_dy > 0.06:
+                        is_s_motion = True
+                        s_cooldown = 20
 
             # --- LSC TROUBLESHOOTING LOGIC ---
 
@@ -140,6 +157,9 @@ while cap.isOpened():
                 # Si la mano está acostada (el dedo se extiende más en X que en Y), reiniciamos el cooldown
                 if abs(lm[6].x - lm[5].x) > abs(lm[6].y - lm[5].y):
                     g_cooldown = 15
+
+            elif (i_ext and not m_ext and not r_ext and not p_ext) and (is_s_motion or s_cooldown > 0):
+                label = "LSC: S"
             
 
             # LETTER D: Only index up (make sure index is really extended)
@@ -161,9 +181,10 @@ while cap.isOpened():
 
             #control of H, R, k, V: index and middle up
             elif i_ext and m_ext and not r_ext and not p_ext:
+
                 is_z_motion = False
-                if i_ext and m_ext and not r_ext and not p_ext:  # <--- CORREGIDO AQUÍ
-                    if len(index_history) == index_history.maxlen:
+                if i_ext and m_ext and not r_ext and not p_ext: 
+                    if i_tip_to_mid_tip < 0.6:
                         x_coords = [p[0] for p in index_history]
                         y_coords = [p[1] for p in index_history]
                         
@@ -188,8 +209,8 @@ while cap.isOpened():
                 #LETTER K: thumb up close to middle and index (6-10)
                 elif(thumb_to_knuckle_6 < 0.4 or thumb_to_knuckle_10 < 0.4):
                     label = "LSC: K"
-                #funciona z pero con dedos separados
-                elif (i_ext and m_ext and not r_ext and not p_ext) and (is_z_motion or z_cooldown > 0):
+                #LETTER Z: with fingers apart but with motion
+                elif (i_ext and m_ext and not r_ext and not p_ext and i_tip_to_mid_tip < 0.6) and (is_z_motion or z_cooldown > 0):
                     label = "LSC: Z"
 
                 #LETTER V: thumb touches ring knuckle (14-15)
