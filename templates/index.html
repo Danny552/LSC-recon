@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LSC Production Server</title>
+    <style>
+        body { background: #121212; color: #fff; font-family: 'Segoe UI', Tahoma, sans-serif; margin:0; padding: 12px; text-align:center;}
+        .container { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top:12px; }
+        .box { background: #1e1e1e; padding: 12px; border-radius: 8px; border: 1px solid #333; }
+        img { border: 2px solid #ffffff; border-radius: 6px; width: 480px; height: 360px; }
+        .panel { width: 260px; display: flex; flex-direction: column; justify-content: space-between; }
+        .word-box { font-size: 24px; background: #000; padding: 12px; color: #ffffff; border-radius: 6px; min-height: 36px; letter-spacing: 2px; }
+        .progress-bar { background: #333; border-radius: 16px; height: 15px; width: 100%; overflow: hidden; margin-top: 8px; }
+        .progress-fill { background: #00eeff; width: 0%; height: 100%; transition: width 0.1s linear; }
+        button { background: #ff3333; color: white; border: none; padding: 9px; border-radius: 5px; font-weight: bold; cursor: pointer; margin-top: 12px; font-size: 13px; }
+        button:hover { background: #cc0000; }
+        .sign-section { position: relative; }
+        .corner-img { position: absolute; top: 2px; right: 2px; width: 80px; height: 80px; border: none; border-radius: 4px; }
+    </style>
+    <script>
+        setInterval(async () => {
+            let res = await fetch('/get_data');
+            let data = await res.json();
+            document.getElementById('word').innerText = data.word || "[Empty]";
+            document.getElementById('live-letter').innerText = data.letter;
+            document.getElementById('progress').style.width = data.progress + "%";
+        }, 100);
+        async function clearText() { await fetch('/clear_word'); }
+    </script>
+</head>
+<body>
+    <h2>LSC Sign-to-Text Engine</h2>
+    <p>Host Processing Architecture Mode</p>
+    <div class="container">
+        <div class="box"><img src="/video_feed"></div>
+        <div class="box panel">
+            <div class="sign-section">
+                <img src="/5687730.png" alt="Logo" class="corner-img">
+                <h3>Current Sign</h3>
+                <h1 id="live-letter" style="color:#ffffff; font-size:48px; margin:8px 0;">-</h1>
+                <p>Hold static for 2 seconds to write</p>
+                <div class="progress-bar"><div id="progress" class="progress-fill"></div></div>
+            </div>
+            <div>
+                <h3>Constructed Sentences</h3>
+                <div id="word" class="word-box">[Empty]</div>
+                <button onclick="clearText()">Clear Text Engine</button>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

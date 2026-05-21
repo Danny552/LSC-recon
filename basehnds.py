@@ -5,7 +5,7 @@ import pyttsx3
 import threading
 import time
 from collections import deque
-from flask import Flask, Response, jsonify
+from flask import Flask, Response, jsonify, render_template
 
 # --- INITIALIZATION AND SETUP ---
 mp_hands = mp.solutions.hands
@@ -46,7 +46,7 @@ z_cooldown = 0
 s_cooldown = 0
 
 # --- FLASK ROUTING ---
-app = Flask(__name__)
+app = Flask(__name__, static_folder='templates', static_url_path='')
 cap = cv2.VideoCapture(0)
 cap.set(cv2.CAP_PROP_BUFFERSIZE, 1) # Set buffer size low for instant frame delivery
 
@@ -270,55 +270,7 @@ def clear_word():
 
 @app.route('/')
 def index():
-    return """
-    <html>
-    <head>
-        <title>LSC Production Server</title>
-        <style>
-            body { background: #121212; color: #fff; font-family: 'Segoe UI', Tahoma, sans-serif; margin:0; padding: 20px; text-align:center;}
-            .container { display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; margin-top:20px; }
-            .box { background: #1e1e1e; padding: 20px; border-radius: 12px; border: 1px solid #333; }
-            img { border: 3px solid #00ff00; border-radius: 8px; width: 640px; height: 480px; }
-            .panel { width: 350px; display: flex; flex-direction: column; justify-content: space-between; }
-            .word-box { font-size: 32px; background: #000; padding: 15px; color: #00ff00; border-radius: 6px; min-height: 45px; letter-spacing: 2px; }
-            .progress-bar { background: #333; border-radius: 20px; height: 20px; width: 100%; overflow: hidden; margin-top: 10px; }
-            .progress-fill { background: #00ff00; width: 0%; height: 100%; transition: width 0.1s linear; }
-            button { background: #ff3333; color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; margin-top: 15px;}
-            button:hover { background: #cc0000; }
-        </style>
-        <script>
-            setInterval(async () => {
-                let res = await fetch('/get_data');
-                let data = await res.json();
-                document.getElementById('word').innerText = data.word || "[Empty]";
-                document.getElementById('live-letter').innerText = data.letter;
-                document.getElementById('progress').style.width = data.progress + "%";
-            }, 100);
-            async function clearText() { await fetch('/clear_word'); }
-        </script>
-    </head>
-    <body>
-        <h2>LSC Sign-to-Text Engine</h2>
-        <p>Host Processing Architecture Mode</p>
-        <div class="container">
-            <div class="box"><img src="/video_feed"></div>
-            <div class="box panel">
-                <div>
-                    <h3>Current Sign</h3>
-                    <h1 id="live-letter" style="color:#00ff00; font-size:64px; margin:10px 0;">-</h1>
-                    <p>Hold static for 2 seconds to write</p>
-                    <div class="progress-bar"><div id="progress" class="progress-fill"></div></div>
-                </div>
-                <div>
-                    <h3>Constructed Sentences</h3>
-                    <div id="word" class="word-box">[Empty]</div>
-                    <button onclick="clearText()">Clear Text Engine</button>
-                </div>
-            </div>
-        </div>
-    </body>
-    </html>
-    """
+    return render_template('index.html')
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
