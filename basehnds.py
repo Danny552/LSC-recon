@@ -7,12 +7,10 @@ import time
 from collections import deque
 from flask import Flask, Response, jsonify, render_template
 
-# --- INITIALIZATION AND SETUP ---
 mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.7, min_tracking_confidence=0.7)
 mp_draw = mp.solutions.drawing_utils
 
-# --- AUDIO FEEDBACK GENERATOR (TTS) ---
 engine = pyttsx3.init()
 engine.setProperty('rate', 160)
 audio_lock = threading.Lock()
@@ -25,17 +23,14 @@ def speak_letter_async(letter):
             engine.runAndWait()
     threading.Thread(target=target, daemon=True).start()
 
-# --- WORD WRITING ENGINE VARIABLES ---
 current_word = ""               # Holds the typed text string
 stable_letter = "Searching..."  # Current tracked letter match
 stable_since = None             # Timestamp when the letter first became stable
 REQUIRED_STABLE_TIME = 2.0      # Time window in seconds to type a letter
 
-# --- DISTANCE HELPER ---
 def dist_2d(p1, p2):
     return math.hypot(p1.x - p2.x, p1.y - p2.y)
 
-# --- DYNAMIC GESTURE HISTORIES ---
 wrist_x_history = deque(maxlen=12)
 pinky_history = deque(maxlen=20)
 index_history = deque(maxlen=25) 
@@ -43,9 +38,8 @@ j_cooldown = 0
 n_cooldown = 0
 g_cooldown = 0
 z_cooldown = 0
-s_cooldown = 0
+s_cooldown = 0 
 
-# --- FLASK ROUTING ---
 app = Flask(__name__, static_folder='templates', static_url_path='')
 cap = cv2.VideoCapture(0)
 cap.set(cv2.CAP_PROP_BUFFERSIZE, 1) # Set buffer size low for instant frame delivery
@@ -211,9 +205,8 @@ def generate_lsc_frames():
                     elif thumb_to_index_tip > 0.45 and thumb_to_index_tip < 0.65: label = "C"
                     else: label = "closed fist"
                 elif i_ext and thumb_to_knuckle_5 > 0.5 and not m_ext:
-                    label = "LSC: L"
+                    label = "L"
 
-        # --- TIMER ENGINE FOR WRITING SYSTEM ---
         valid_signs = ["A","B","C","D","E","F","G","H","I","J","K","L","M","N","Ñ","O","P","Q","R","S","T","U","V","W","X","Y","Z"]
         
         if label in valid_signs:
